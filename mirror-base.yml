@@ -1,0 +1,115 @@
+# Shared base for every spec in this repository (miniserve).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# metadata, catalog, tests, versions, announce, annotations — stays in that
+# package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. Restate
+# `platforms:` IN FULL or not at all. miniserve/mirror.yml does not restate it.
+
+skip_prereleases: true
+cascade: true
+
+# New package, so the fleet rule applies unconditionally. A cascade tag
+# (`latest`, `0`, `0.35`) re-points on every re-publish; without a build segment
+# the new manifest reuses the bare version tag and orphans the prior digest for
+# registry GC, breaking any `@sha256:` pin in a consumer's ocx.lock. The `none`
+# exception applies only where upstream versions ALREADY carry semver build
+# metadata — miniserve tags plain `vX.Y.Z`, so it does not.
+build_timestamp: date
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Assets are ~2.2–2.4 MB single UPX-compressed binaries, one file per
+  # platform — no archive to unpack.
+  max_downloads: 8
+  max_bundles: 4
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# `off`, and it cannot be otherwise here. The scan only looks BELOW an
+# interface PATH entry of the form ${installPath}/<dir>, and a raw-binary
+# mirror has none — the executable IS the content root, so PATH is a bare
+# ${installPath}. `auto` or `verify` is rejected at spec load with exit 65
+# ("bin_scan is enabled but … declares no interface-visible ${installPath}/<dir>
+# PATH entry"). `off` with a hand-listed `binaries` in metadata.json is the
+# blessed shape for `asset_type: binary` — and here that list is doubly
+# load-bearing: GitHub serves these raw assets WITHOUT the exec bit (mode 0644
+# as downloaded), and `prepare` chmods only the binaries the metadata declares.
+# Quoted so no YAML 1.1 reader folds the bare word into boolean `false`.
+bin_scan: "off"
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. Upstream ships BOTH a gnu and a musl build for
+# each Linux arch; this mirror carries the musl one under a BARE key because it
+# is fully static and therefore requires nothing. The measurement is recorded
+# above `assets:` in miniserve/mirror.yml — including why `readelf` alone
+# cannot answer the question for this upstream (every Linux and Windows asset
+# is UPX-packed).
+#
+# A bare key claims universality, so it must prove it: ubuntu (glibc) + alpine
+# (musl) + fedora (different glibc vintage). The alpine leg IS the proof — drop
+# it and the universal claim is merely asserted. It reds against the gnu
+# artifact (verified: exit 127), which is what makes it evidence rather than
+# habit.
+#
+# ⚠️ STAGED ROLLOUT (Phase 10). darwin and windows are commented out below AND
+# in miniserve/mirror.yml's `assets:` block, and are uncommented one pass at a
+# time. Commenting only the asset key is NOT enough: an unmatched platform
+# self-skips per version but still boots its runner and reports SUCCESS having
+# tested nothing.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front.
+    runner: ubuntu-24.04-arm
+    containers:
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  # --- pass 2 (darwin) ---
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
+  #   # native macos-13 Intel pool is exhausted and deadlocks the push job.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  # --- pass 3 (windows) ---
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  #
+  # No windows/arm64: upstream ships no aarch64 Windows target at all. Its two
+  # Windows assets are x86_64-pc-windows-msvc.exe and i686-pc-windows-msvc.exe
+  # (verified on v0.33.0/v0.34.0/v0.35.0), and OCX has no 386 architecture, so
+  # windows/amd64 is the complete Windows surface. Declaring windows/arm64
+  # would match zero assets — silently skipped, a green run with a phantom
+  # platform.
+  #
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

@@ -1,0 +1,172 @@
+# ⚠ `extends:` is a SHALLOW merge of TOP-LEVEL KEYS. Setting a key here
+# REPLACES the base's block outright — there is no per-key merge. `platforms:`
+# is deliberately NOT restated below: it carries the container legs that make
+# this spec's libc claim honest, and restating it to tweak one runner would
+# drop them all without reddening anything. This repo is single-package, so the
+# measured matrix lives in the base and nothing here touches it.
+extends: ../mirror-base.yml
+
+name: miniserve
+
+# Logical index package `miniserve/miniserve` at the physical path
+# `ghcr.io/ocx-contrib/miniserve/miniserve` — slash segments, never
+# hyphen-flattened. Two segments always; `svenstaro` is a maintainer's personal
+# handle, not a vendor or a project brand, so under the tool-as-namespace rule
+# the tool names itself. The first segment must be this repo's own GitHub
+# owner: GITHUB_TOKEN only authorises packages owned by the repo the workflow
+# runs in.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/miniserve/miniserve
+
+source:
+  type: github_release
+  owner: svenstaro
+  repo: miniserve
+  # Tags are `vX.Y.Z`. Note the TAG carries the `v` but the ASSET FILENAMES do
+  # NOT (`v0.35.0` → `miniserve-0.35.0-…`), which is why every pattern below
+  # matches the version generically rather than reusing the tag text.
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST. Upstream ships a
+# gnu AND a musl build for each Linux arch, so the choice is real.
+#
+# ⚠ `readelf`/`file` ALONE CANNOT ANSWER IT FOR THIS UPSTREAM. Every Linux and
+# Windows asset is UPX-packed (build-release.yml runs svenstaro/upx-action with
+# `--best --lzma` on every target whose matrix row sets `compress: true`;
+# darwin, riscv64, freebsd and illumos are the exceptions). The packer leaves a
+# 3-program-header stub with no PT_INTERP, no PT_DYNAMIC and no section
+# headers, so `file` calls EVERY Linux asset "statically linked" — including
+# the glibc-dynamic ones:
+#
+#   $ file miniserve-0.35.0-x86_64-unknown-linux-gnu
+#   ELF 64-bit LSB shared object, x86-64, … statically linked, no section header
+#   $ readelf -l … | grep -c INTERP  → 0        # ← WRONG ANSWER, the stub's
+#   $ strings -a … | grep -c '^UPX'  → 3        # ← why
+#
+# Unpack first, then measure (v0.35.0 and v0.33.0 measure identically):
+#
+#   $ upx -d -o raw <asset> && readelf -l raw | grep -c INTERP
+#     …-x86_64-unknown-linux-musl   → 0   NEEDED: (none)
+#     …-aarch64-unknown-linux-musl  → 0   NEEDED: (none)
+#     …-x86_64-unknown-linux-gnu    → 1   NEEDED: libgcc_s.so.1 libm.so.6 libc.so.6
+#                                             readelf -V … → GLIBC_2.34
+#     …-aarch64-unknown-linux-gnu   → 1   NEEDED: libgcc_s.so.1 libm.so.6 libc.so.6
+#
+# Confirmed by RUNNING each artifact under all three container userlands, which
+# is the same evidence the CI legs collect (v0.35.0 and v0.33.0, both arches):
+#
+#   docker run --rm -v …:/w:ro <image> /w/<asset> --version
+#                              ubuntu:24.04   fedora:40   alpine:3.20
+#     …-unknown-linux-musl  →      0              0            0
+#     …-unknown-linux-gnu   →      0              0          127   ← no loader
+#
+#   ⇒ the musl builds require NOTHING → BARE `linux/amd64` / `linux/arm64`.
+#     `+libc.musl` would be a false requirement that hid the package from every
+#     glibc host it demonstrably runs on. The gnu builds genuinely require
+#     glibc ≥ 2.34 and are DELIBERATELY NOT CARRIED: a second `+libc.glibc` key
+#     is the fallback, not the goal, and it earns its place only where the gnu
+#     build reaches capability the static one lacks. The usual differentiator is
+#     musl's NSS-blind resolver — miniserve is an inbound HTTP file server that
+#     binds an IP given by `--interfaces` and resolves no hostnames, so it does
+#     not apply. The alpine container leg on each bare key is what turns the
+#     universality claim into evidence, and it reds against the gnu artifact
+#     (127 above), so a green there is a reached red, not a habit.
+#
+# ─── Scope (verified against v0.33.0 (the floor), v0.34.0 and v0.35.0) ──────
+#
+# Every pattern below matches EXACTLY ONE asset on EVERY one of the three
+# in-range releases — checked with anchored regexes against each release's full
+# 14-asset list. A pattern matching ZERO is silently skipped, not an error: it
+# would yield a green run with a missing platform.
+#
+# ⚠ AMBIGUITY HAZARD ON BOTH LINUX ARCHES, avoided by the terminating `$`:
+# each arch ships `…-unknown-linux-gnu` AND `…-unknown-linux-musl`, so an
+# unanchored `…-x86_64-unknown-linux` pattern matches BOTH → hard ambiguous
+# error (measured: 2 matches unanchored, 1 anchored).
+#
+# ⚠ RAW BINARIES, NO ARCHIVE — not even on Windows, which ships a bare `.exe`.
+# GitHub serves them mode 0644 (no exec bit), so metadata.json's `binaries`
+# claim is load-bearing: `prepare` chmods only the binaries it names.
+#
+# ✓ TAG↔CONTENT AGREEMENT CHECKED, not assumed. Each asset filename embeds its
+# own release's version (`v0.35.0` → `miniserve-0.35.0-…`, all 14 assets, all
+# three tags), and the artifacts self-report to match: v0.35.0's binary prints
+# `miniserve 0.35.0`, v0.33.0's prints `miniserve 0.33.0`. An upstream shipping
+# the previous version's bytes under a new tag would otherwise green everywhere
+# — it happened on this fleet.
+#
+# Upstream also publishes, and this mirror deliberately does not carry:
+#   arm-unknown-linux-musleabihf, armv7-unknown-linux-{gnueabihf,musleabihf},
+#   riscv64gc-unknown-linux-gnu, i686-pc-windows-msvc.exe   — OCX's Architecture
+#                                       enum is amd64 + arm64 only, so these
+#                                       are not expressible as platform keys
+#   x86_64-unknown-freebsd, x86_64-unknown-illumos          — no OCX os, and no
+#                                       GitHub runner exists for either
+#   x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu     — see the libc gate
+#
+# The anchored ^…$ regexes are what keep those out.
+assets:
+  linux/amd64:
+    - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-unknown-linux-musl$"
+  linux/arm64:
+    - "^miniserve-\\d+\\.\\d+\\.\\d+-aarch64-unknown-linux-musl$"
+  # --- pass 2 (darwin) ---
+  # darwin/amd64:
+  #   - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-apple-darwin$"
+  # darwin/arm64:
+  #   - "^miniserve-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin$"
+  # --- pass 3 (windows) ---
+  # windows/amd64:
+  #   - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.exe$"
+
+asset_type:
+  # Raw binaries on every platform — no archive anywhere, so there is nothing to
+  # strip. The asset filename carries the version and the target triple, so
+  # `name:` renames it to the plain `miniserve` the bundle must expose on PATH.
+  default:
+    type: binary
+    name: miniserve
+  # --- pass 3 (windows) ---
+  # The Windows asset already ends in `.exe`, but the rename target is spelled
+  # out anyway so the bundle ships `miniserve.exe` rather than the versioned
+  # upstream filename.
+  # platforms:
+  #   windows/amd64:
+  #     type: binary
+  #     name: miniserve.exe
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 0.33.0 is the floor. The asset set is identical in shape across 0.33.0,
+  # 0.34.0 and 0.35.0 (14 assets each, same 14 target triples), so no in-range
+  # release is missing a declared platform's asset — an asset-less release
+  # inside the range is dropped SILENTLY by the pipeline.
+  min: "0.33.0"
+  new_per_run: 5
+  poll_interval: "22 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: miniserve/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/svenstaro/miniserve/license --jq '.license.spdx_id'
+  #   MIT
+  org.opencontainers.image.licenses: "MIT"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: miniserve/miniserve
+  fork: ocx-contrib/index
