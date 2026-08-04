@@ -117,9 +117,8 @@ assets:
     - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-apple-darwin$"
   darwin/arm64:
     - "^miniserve-\\d+\\.\\d+\\.\\d+-aarch64-apple-darwin$"
-  # --- pass 3 (windows) ---
-  # windows/amd64:
-  #   - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.exe$"
+  windows/amd64:
+    - "^miniserve-\\d+\\.\\d+\\.\\d+-x86_64-pc-windows-msvc\\.exe$"
 
 asset_type:
   # Raw binaries on every platform — no archive anywhere, so there is nothing to
@@ -128,14 +127,13 @@ asset_type:
   default:
     type: binary
     name: miniserve
-  # --- pass 3 (windows) ---
   # The Windows asset already ends in `.exe`, but the rename target is spelled
   # out anyway so the bundle ships `miniserve.exe` rather than the versioned
   # upstream filename.
-  # platforms:
-  #   windows/amd64:
-  #     type: binary
-  #     name: miniserve.exe
+  platforms:
+    windows/amd64:
+      type: binary
+      name: miniserve.exe
 
 metadata:
   default: metadata.json

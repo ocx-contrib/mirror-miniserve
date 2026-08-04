@@ -93,11 +93,9 @@ platforms:
   darwin/arm64:
     runner: macos-14
     shell: bash
-  # --- pass 3 (windows) ---
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
-  #
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
   # No windows/arm64: upstream ships no aarch64 Windows target at all. Its two
   # Windows assets are x86_64-pc-windows-msvc.exe and i686-pc-windows-msvc.exe
   # (verified on v0.33.0/v0.34.0/v0.35.0), and OCX has no 386 architecture, so
