@@ -148,7 +148,7 @@ versions:
   # inside the range is dropped SILENTLY by the pipeline.
   min: "0.33.0"
   new_per_run: 5
-  poll_interval: "22 */6 * * *"
+  poll_interval: "50 3-23/6 * * *"
 
 tests:
   # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
