@@ -85,15 +85,14 @@ platforms:
       - { image: "ubuntu:24.04", shell: bash }
       - { image: "alpine:3.20",  shell: sh }
       - { image: "fedora:40",    shell: bash }
-  # --- pass 2 (darwin) ---
-  # darwin/amd64:
-  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
-  #   # native macos-13 Intel pool is exhausted and deadlocks the push job.
-  #   runner: macos-14
-  #   prefix: ["arch", "-x86_64"]
-  # darwin/arm64:
-  #   runner: macos-14
-  #   shell: bash
+  darwin/amd64:
+    # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 — GitHub's
+    # native macos-13 Intel pool is exhausted and deadlocks the push job.
+    runner: macos-14
+    prefix: ["arch", "-x86_64"]
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
   # --- pass 3 (windows) ---
   # windows/amd64:
   #   runner: windows-latest
